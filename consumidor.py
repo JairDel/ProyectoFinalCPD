@@ -1,4 +1,4 @@
-from kafka import KafkaConsumer
+from confluent_kafka import Consumer, KafkaException
 import json
 from pymongo import MongoClient
 
@@ -9,33 +9,36 @@ weather_collection = db['weather_data']
 crypto_collection = db['crypto_data']
 
 # Configuración del consumidor de Kafka
-consumer_weather = KafkaConsumer(
-    'TopicA',
-    bootstrap_servers='localhost:9092',
-    value_deserializer=lambda x: json.loads(x.decode('utf-8'))
-)
+consumer_config = {
+    'bootstrap.servers': 'localhost:9092',
+    'group.id': 'mi_grupo_consumidor',
+    'auto.offset.reset': 'earliest'
+}
 
-consumer_crypto = KafkaConsumer(
-    'TopicB',
-    bootstrap_servers='localhost:9092',
-    value_deserializer=lambda x: json.loads(x.decode('utf-8'))
-)
+consumer = Consumer(consumer_config)
+consumer.subscribe(['TopicA', 'TopicB'])
 
-# Consumir los mensajes y almacenar en MongoDB
 print("Esperando mensajes de Kafka...")
-try:
-    for message in consumer_weather:
-        weather_data = message.value
-        weather_collection.insert_one(weather_data)
-        print(f"Datos del clima almacenados: {weather_data}")
 
-    for message in consumer_crypto:
-        crypto_data = message.value
-        crypto_collection.insert_one(crypto_data)
-        print(f"Datos de criptomonedas almacenados: {crypto_data}")
+try:
+    while True:
+        msg = consumer.poll(1.0)  # Espera 1 segundo por mensajes
+        if msg is None:
+            continue
+        if msg.error():
+            raise KafkaException(msg.error())
+        
+        data = json.loads(msg.value().decode('utf-8'))
+        
+        if msg.topic() == 'TopicA':  # Datos del clima
+            weather_collection.insert_one(data)
+            print(f"Datos del clima almacenados: {data}")
+        elif msg.topic() == 'TopicB':  # Datos de criptomonedas
+            crypto_collection.insert_one(data)
+            print(f"Datos de criptomonedas almacenados: {data}")
 
 except Exception as e:
     print(f"Error al consumir mensajes o almacenar en MongoDB: {e}")
+
 finally:
-    consumer_weather.close()
-    consumer_crypto.close()
+    consumer.close()

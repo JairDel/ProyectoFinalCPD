@@ -1,13 +1,16 @@
+from confluent_kafka import Producer
 import requests
-from kafka import KafkaProducer
 import json
 import time
 
-# Configuración de Kafka
-producer = KafkaProducer(
-    bootstrap_servers='localhost:9092',
-    value_serializer=lambda v: json.dumps(v).encode('utf-8')
-)
+# Configuración del productor
+producer = Producer({'bootstrap.servers': 'localhost:9092'})
+
+def delivery_report(err, msg):
+    if err is not None:
+        print('Error al entregar mensaje: {}'.format(err))
+    else:
+        print('Mensaje entregado a {} [{}]'.format(msg.topic(), msg.partition()))
 
 # API de Open Meteo
 def fetch_weather_data():
@@ -25,9 +28,10 @@ def fetch_crypto_data():
 while True:
     weather_data = fetch_weather_data()
     crypto_data = fetch_crypto_data()
-    
-    producer.send('TopicA', weather_data)  # Enviar datos del clima
-    producer.send('TopicB', crypto_data)  # Enviar datos de criptomonedas
 
+    producer.produce('TopicA', key=None, value=json.dumps(weather_data), callback=delivery_report)
+    producer.produce('TopicB', key=None, value=json.dumps(crypto_data), callback=delivery_report)
+
+    producer.flush()
     print('Datos enviados a Kafka')
-    time.sleep(60)  # Esperar 60 segundos antes de hacer la siguiente solicitud
+    time.sleep(60)
